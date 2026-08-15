@@ -13,11 +13,10 @@ import re
 from pathlib import Path
 
 from .config import settings
-from .asf_client import send_command
 
 logger = logging.getLogger(__name__)
 
-ASF_CONFIG_DIR = Path("/opt/steam-panel/asf-config")
+ASF_CONFIG_DIR = Path(settings.asf_config_path)
 ASF_CONTAINER  = "steam-panel-asf"
 ASF_FIFO       = "/tmp/asf_in"
 
@@ -29,6 +28,72 @@ def _next_bot_name() -> str:
         if name not in existing:
             return name
     raise RuntimeError("Too many bots")
+
+
+def _generate_totp_code(shared_secret: str) -> dict:
+    """Generate TOTP code from maFile shared_secret."""
+    # Decode base64 secret
+    secret = base64.b64decode(shared_secret)
+
+    # Time-based token
+    timestamp = int(time.time())
+    time_step = 30
+    counter = timestamp // time_step
+
+    # Generate HMAC
+    msg = struct.pack('>Q', counter)
+    mac = hmac.new(secret, msg, hashlib.sha1).digest()
+
+    # Steam-specific character set
+    chars = '23456789BCDFGHJKMNPQRTVWXY'
+
+    # Extract offset
+    offset = mac[-1] & 0x0F
+
+    # Extract 4-byte code
+    code_int = struct.unpack('>I', mac[offset:offset+4])[0] & 0x7FFFFFFF
+
+    # Convert to 5-character code
+    code = ''
+    for _ in range(5):
+        code += chars[code_int % len(chars)]
+        code_int //= len(chars)
+
+    # Calculate seconds remaining
+    seconds_remaining = time_step - (timestamp % time_step)
+
+    return {
+        "code": code,
+        "seconds_remaining": seconds_remaining,
+        "timestamp": timestamp,
+    }
+
+
+def get_steamguard_code(botname: str) -> dict:
+    """Get current SteamGuard code for bot."""
+    mafile_path = ASF_CONFIG_DIR / f"{botname}.maFile"
+
+    if not mafile_path.exists():
+        return {"error": "maFile not found", "has_mafile": False}
+
+    try:
+        with open(mafile_path) as f:
+            mafile_data = json.load(f)
+
+        shared_secret = mafile_data.get("shared_secret")
+        if not shared_secret:
+            return {"error": "shared_secret missing", "has_mafile": True}
+
+        code_data = _generate_totp_code(shared_secret)
+        code_data["has_mafile"] = True
+        code_data["account_name"] = mafile_data.get("account_name", "unknown")
+
+        return code_data
+
+    except Exception as e:
+        logger.error("Failed to generate code for %s: %s", botname, e)
+        return {"error": str(e), "has_mafile": True}
+
 
 
 def create_bot_config(botname: str, login: str, password: str,
@@ -236,3 +301,36 @@ def get_bot_login_status(botname: str) -> dict:
         return {"status": "connecting", "message": "Подключились, проверяем пароль..."}
 
     return {"status": "connecting", "message": "Ожидаем ответа Steam..."}
+
+
+async def get_steamguard_code(steamid: str, db_path: str) -> dict:
+    """Get SteamGuard code for account."""
+    from .db import get_accounts
+    accounts = await get_accounts(db_path)
+    account = next((a for a in accounts if a["steamid"] == steamid), None)
+
+    if not account:
+        return {"error": "Account not found", "has_mafile": False}
+
+    botname = account.get("asf_bot_name")
+    if not botname:
+        return {"error": "No bot name", "has_mafile": False}
+
+    return get_steamguard_code(botname)
+
+
+async def confirm_all_trades(botname: str, ipc_url: str, ipc_password: str) -> str:
+    """Confirm all pending trades and market transactions via ASF."""
+    try:
+        # Send 2fa confirmation command
+        result = await send_command(
+            botname,
+            f"2faok {botname}",
+            ipc_url=ipc_url,
+            ipc_password=ipc_password,
+        )
+        return result
+    except Exception as e:
+        logger.error("confirm_all_trades failed: %s", e)
+        return f"Error: {e}"
+

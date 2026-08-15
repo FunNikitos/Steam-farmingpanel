@@ -7,7 +7,18 @@ CREATE TABLE IF NOT EXISTS accounts (
     status TEXT DEFAULT 'offline', total_hours REAL DEFAULT 0,
     level INTEGER DEFAULT 0, xp INTEGER DEFAULT 0,
     wallet_balance TEXT DEFAULT '0.00', enabled INTEGER DEFAULT 1,
+    owner_id INTEGER, has_mafile INTEGER DEFAULT 0,
     updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS account_access (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    steamid TEXT NOT NULL,
+    telegram_id INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('manager', 'viewer')),
+    granted_by INTEGER NOT NULL,
+    granted_at TEXT NOT NULL,
+    FOREIGN KEY (steamid) REFERENCES accounts(steamid),
+    UNIQUE(steamid, telegram_id)
 );
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT, steamid TEXT NOT NULL,
@@ -196,3 +207,117 @@ async def delete_auth_session(db_path: str, token: str) -> None:
     async with aiosqlite.connect(db_path) as conn:
         await conn.execute("DELETE FROM auth_sessions WHERE token=?", (token,))
         await conn.commit()
+
+
+# ============================================
+# Access Control Functions
+# ============================================
+
+async def add_account(
+    db_path: str,
+    *,
+    steamid: str,
+    login: str,
+    asf_bot_name: str,
+    owner_id: int,
+    has_mafile: bool = False
+) -> None:
+    """Add new account with owner."""
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            """INSERT INTO accounts(steamid, login, asf_bot_name, owner_id, has_mafile)
+               VALUES(?, ?, ?, ?, ?)""",
+            (steamid, login, asf_bot_name, owner_id, int(has_mafile))
+        )
+        await conn.commit()
+
+
+async def delete_account(db_path: str, steamid: str) -> None:
+    """Delete account and all related data."""
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute("DELETE FROM accounts WHERE steamid=?", (steamid,))
+        await conn.execute("DELETE FROM account_access WHERE steamid=?", (steamid,))
+        await conn.execute("DELETE FROM sessions WHERE steamid=?", (steamid,))
+        await conn.commit()
+
+
+async def grant_access(
+    db_path: str,
+    steamid: str,
+    telegram_id: int,
+    role: str,
+    granted_by: int
+) -> None:
+    """Grant access to account."""
+    now = datetime.now(timezone.utc).isoformat()
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            """INSERT OR REPLACE INTO account_access
+               (steamid, telegram_id, role, granted_by, granted_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (steamid, telegram_id, role, granted_by, now)
+        )
+        await conn.commit()
+
+
+async def revoke_access(db_path: str, steamid: str, telegram_id: int) -> None:
+    """Revoke user access to account."""
+    async with aiosqlite.connect(db_path) as conn:
+        await conn.execute(
+            "DELETE FROM account_access WHERE steamid=? AND telegram_id=?",
+            (steamid, telegram_id)
+        )
+        await conn.commit()
+
+
+async def get_user_role(db_path: str, steamid: str, telegram_id: int) -> str | None:
+    """Get user role for account (owner/manager/viewer/None)."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+
+        # Check if owner
+        cur = await conn.execute(
+            "SELECT owner_id FROM accounts WHERE steamid=?",
+            (steamid,)
+        )
+        row = await cur.fetchone()
+        if row and row[0] == telegram_id:
+            return "owner"
+
+        # Check granted access
+        cur = await conn.execute(
+            "SELECT role FROM account_access WHERE steamid=? AND telegram_id=?",
+            (steamid, telegram_id)
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
+
+
+async def get_account_accesses(db_path: str, steamid: str) -> list[dict]:
+    """Get all users with access to account."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cur = await conn.execute(
+            """SELECT telegram_id, role, granted_by, granted_at
+               FROM account_access
+               WHERE steamid=?
+               ORDER BY granted_at DESC""",
+            (steamid,)
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_user_accounts(db_path: str, telegram_id: int) -> list[dict]:
+    """Get all accounts accessible to user."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cur = await conn.execute(
+            """SELECT DISTINCT a.*, aa.role
+               FROM accounts a
+               LEFT JOIN account_access aa ON a.steamid = aa.steamid
+               WHERE a.owner_id = ? OR aa.telegram_id = ?
+               ORDER BY a.login""",
+            (telegram_id, telegram_id)
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
