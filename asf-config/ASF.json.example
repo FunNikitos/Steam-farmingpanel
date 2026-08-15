@@ -1,0 +1,9 @@
+{
+  "IPCPassword": "your_asf_password_here",
+  "SteamOwnerID": 0,
+  "Headless": true,
+  "AutoRestart": true,
+  "UpdateChannel": 1,
+  "UpdatePeriod": 24,
+  "OptimizationMode": 2
+}

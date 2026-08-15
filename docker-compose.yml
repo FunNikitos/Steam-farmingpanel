@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: steam-panel-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./asf-config:/app/asf-config
+    depends_on:
+      - asf
+    networks:
+      - steam-panel
+
+  asf:
+    image: justarchi/archisteamfarm:latest
+    container_name: steam-panel-asf
+    restart: unless-stopped
+    environment:
+      - ASF_ARGS=--server --no-restart
+    volumes:
+      - ./asf-config:/app/config
+    ports:
+      - "127.0.0.1:1242:1242"
+    networks:
+      - steam-panel
+    stdin_open: true
+    tty: true
+
+networks:
+  steam-panel:
+    driver: bridge
