@@ -215,8 +215,8 @@ async def add_via_mafile_receive_file(message: Message, state: FSMContext):
     """Receive maFile document."""
     document = message.document
 
-    # Check file extension
-    if not document.file_name.endswith(".maFile"):
+    # Check file extension (case-insensitive)
+    if not document.file_name.lower().endswith(".mafile"):
         await message.answer(
             "⚠️ Файл должен иметь расширение .maFile\n\n"
             "Попробуй ещё раз или нажми /start для отмены"
