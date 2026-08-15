@@ -149,7 +149,7 @@ async def job_scan_deals() -> None:
     logger.info("job_scan_deals: %d deals saved", len(items))
 
 
-def start_scheduler(app) -> None:
+def start_scheduler(app=None) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=TZ)
     scheduler.add_job(
         job_scan_giveaways,
@@ -167,5 +167,7 @@ def start_scheduler(app) -> None:
         id="scan_deals",
     )
     scheduler.start()
-    app.state.scheduler = scheduler
+    if app is not None:
+        app.state.scheduler = scheduler
     logger.info("Scheduler started (TZ=%s)", TZ)
+    return scheduler
