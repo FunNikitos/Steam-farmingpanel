@@ -23,7 +23,7 @@ async def show_statistics(event: Message | CallbackQuery):
     online = sum(1 for a in accounts if a["status"] in ("farming", "online"))
     total_hours = sum(a.get("total_hours", 0) for a in accounts)
     avg_level = sum(a.get("level", 0) for a in accounts) / len(accounts) if accounts else 0
-    total_balance = sum(a.get("wallet_balance", 0) for a in accounts)
+    total_balance = sum(float(str(a.get("wallet_balance", "0")).replace(",", ".") or "0") for a in accounts)
 
     # Calculate weekly hours per account
     weekly_hours = {}
