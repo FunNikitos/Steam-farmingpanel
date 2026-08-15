@@ -29,7 +29,12 @@ def format_account_card(account: dict, role: str = "owner") -> str:
     msg = f"{emoji} {account['login']} {role_badge}\n"
     msg += "━━━━━━━━━━━━━━━━\n"
     msg += f"├─ Уровень: {account.get('level', 0)} | "
-    msg += f"Баланс: {account.get('wallet_balance', 0):.0f}₽\n"
+    # wallet_balance stored as string, convert safely
+    try:
+        balance = float(str(account.get('wallet_balance', 0)).replace(',', '.'))
+    except (ValueError, TypeError):
+        balance = 0.0
+    msg += f"Баланс: {balance:.0f}₽\n"
     msg += f"├─ CS2: {account.get('total_hours', 0):.1f}ч | "
     msg += f"XP: [{bar}] {xp:.0f}%\n"
 
