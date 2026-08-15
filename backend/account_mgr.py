@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from .config import settings
+from .asf_client import send_command
 
 logger = logging.getLogger(__name__)
 
