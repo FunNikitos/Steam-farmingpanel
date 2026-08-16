@@ -155,37 +155,6 @@ def delete_bot_config(botname: str) -> None:
         mafile_path.unlink()
 
 
-def get_steamguard_code(botname: str) -> dict:
-    """Generate current Steam Guard TOTP code from maFile."""
-    mafile_path = ASF_CONFIG_DIR / f"{botname}.maFile"
-    if not mafile_path.exists():
-        return {"error": "No maFile for this bot", "has_mafile": False}
-
-    try:
-        mf = json.loads(mafile_path.read_text())
-        shared_secret = mf.get("shared_secret", "")
-    except Exception as e:
-        return {"error": str(e), "has_mafile": True}
-
-    try:
-        secret = base64.b64decode(shared_secret)
-        timestamp = int(time.time())
-        time_step = timestamp // 30
-        msg = struct.pack(">Q", time_step)
-        hmac_digest = hmac.new(secret, msg, hashlib.sha1).digest()
-        offset = hmac_digest[-1] & 0x0F
-        code_int = struct.unpack(">I", hmac_digest[offset:offset + 4])[0] & 0x7FFFFFFF
-
-        chars = "23456789BCDFGHJKMNPQRTVWXY"
-        code = ""
-        for _ in range(5):
-            code = chars[code_int % len(chars)] + code
-            code_int //= len(chars)
-
-        seconds_remaining = 30 - (timestamp % 30)
-        return {"code": code, "seconds_remaining": seconds_remaining, "has_mafile": True}
-    except Exception as e:
-        return {"error": f"TOTP error: {e}", "has_mafile": True}
 
 
 def inject_stdin(value: str) -> None:
@@ -303,21 +272,6 @@ def get_bot_login_status(botname: str) -> dict:
 
     return {"status": "connecting", "message": "Ожидаем ответа Steam..."}
 
-
-async def get_steamguard_code(steamid: str, db_path: str) -> dict:
-    """Get SteamGuard code for account."""
-    from .db import get_accounts
-    accounts = await get_accounts(db_path)
-    account = next((a for a in accounts if a["steamid"] == steamid), None)
-
-    if not account:
-        return {"error": "Account not found", "has_mafile": False}
-
-    botname = account.get("asf_bot_name")
-    if not botname:
-        return {"error": "No bot name", "has_mafile": False}
-
-    return get_steamguard_code(botname)
 
 
 async def confirm_all_trades(botname: str, ipc_url: str, ipc_password: str) -> str:

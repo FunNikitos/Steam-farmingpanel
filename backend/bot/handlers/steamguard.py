@@ -36,10 +36,11 @@ async def show_steamguard(callback: CallbackQuery, bot: Bot):
         return
 
     login = account["login"]
+    bot_name = account.get("asf_bot_name")
 
     # Initial code display
     try:
-        code_data = await get_steamguard_code(steamid, settings.db_path)
+        code_data = get_steamguard_code(bot_name)
         text = f"🔑 Steam Guard — {login}\n\n" + format_steamguard_code(code_data)
         keyboard = get_steamguard_buttons(steamid)
 
@@ -52,8 +53,9 @@ async def show_steamguard(callback: CallbackQuery, bot: Bot):
                 bot=bot,
                 chat_id=callback.message.chat.id,
                 message_id=callback.message.message_id,
-                steamid=steamid,
+                bot_name=bot_name,
                 login=login,
+                steamid=steamid,
             )
         )
 
@@ -65,15 +67,16 @@ async def steamguard_refresh_loop(
     bot: Bot,
     chat_id: int,
     message_id: int,
-    steamid: str,
+    bot_name: str,
     login: str,
+    steamid: str,
 ):
     """Auto-refresh SteamGuard code every 5 seconds."""
     for _ in range(6):  # 30 seconds / 5 = 6 iterations
         await asyncio.sleep(5)
 
         try:
-            code_data = await get_steamguard_code(steamid, settings.db_path)
+            code_data = get_steamguard_code(bot_name)
             text = f"🔑 Steam Guard — {login}\n\n" + format_steamguard_code(code_data)
             keyboard = get_steamguard_buttons(steamid)
 

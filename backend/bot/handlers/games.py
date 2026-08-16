@@ -3,6 +3,7 @@ import aiohttp
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.exceptions import TelegramBadRequest
 
 from backend.db import get_user_role, get_accounts
 from backend.account_mgr import send_command
@@ -12,9 +13,10 @@ router = Router()
 
 
 @router.callback_query(F.data.startswith("games:"))
-async def show_games_list(callback: CallbackQuery):
+async def show_games_list(callback: CallbackQuery, steamid: str = None):
     """Show games list for account."""
-    steamid = callback.data.split(":")[1]
+    if steamid is None:
+        steamid = callback.data.split(":")[1]
 
     # Check access (manager or owner)
     role = await get_user_role(settings.db_path, steamid, callback.from_user.id)
@@ -142,8 +144,7 @@ async def toggle_game_selection(callback: CallbackQuery):
     account["games_playing"] = current_games
 
     # Refresh display
-    callback.data = f"games:{steamid}"
-    await show_games_list(callback)
+    await show_games_list(callback, steamid)
 
 
 @router.callback_query(F.data.startswith("save_games:"))

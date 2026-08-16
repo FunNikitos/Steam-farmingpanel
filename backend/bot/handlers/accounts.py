@@ -1,6 +1,7 @@
 """Accounts management handler."""
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.exceptions import TelegramBadRequest
 
 from backend.bot.keyboards import (
     get_accounts_list_buttons,
@@ -65,9 +66,10 @@ async def show_accounts(event: Message | CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("account:"))
-async def show_account_detail(callback: CallbackQuery):
+async def show_account_detail(callback: CallbackQuery, steamid: str = None):
     """Show single account details with all action buttons."""
-    steamid = callback.data.split(":")[1]
+    if steamid is None:
+        steamid = callback.data.split(":")[1]
 
     role = await get_user_role(settings.db_path, steamid, callback.from_user.id)
     if not role:
@@ -125,7 +127,11 @@ async def show_account_detail(callback: CallbackQuery):
     builder.button(text="◀️ К списку", callback_data="accounts")
     builder.adjust(2)
 
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    try:
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            raise
     await callback.answer()
 
 
@@ -163,7 +169,7 @@ async def stop_account(callback: CallbackQuery):
         await callback.answer(f"⚠️ Ошибка: {e}", show_alert=True)
 
     # Refresh account display
-    await show_account_detail(callback)
+    await show_account_detail(callback, steamid)
 
 
 @router.callback_query(F.data.startswith("start:"))
@@ -200,7 +206,7 @@ async def start_account(callback: CallbackQuery):
         await callback.answer(f"⚠️ Ошибка: {e}", show_alert=True)
 
     # Refresh account display
-    await show_account_detail(callback)
+    await show_account_detail(callback, steamid)
 
 
 @router.callback_query(F.data.startswith("delete:"))
@@ -261,16 +267,14 @@ async def delete_account_cancel(callback: CallbackQuery):
     await callback.answer("❌ Отменено")
 
     # Return to account detail
-    callback.data = f"account:{steamid}"
-    await show_account_detail(callback)
+    await show_account_detail(callback, steamid)
 
 
 @router.callback_query(F.data.startswith("refresh:"))
 async def refresh_account(callback: CallbackQuery):
     """Refresh account display."""
     steamid = callback.data.split(":")[1]
-    callback.data = f"account:{steamid}"
-    await show_account_detail(callback)
+    await show_account_detail(callback, steamid)
 
 
 @router.callback_query(F.data == "accounts_refresh")
